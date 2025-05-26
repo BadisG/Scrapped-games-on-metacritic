@@ -90,15 +90,10 @@ for i, rating_count_threshold in enumerate(unique_ratings):
         python_filtered_data_list_for_js.append(filtered_data_for_step)
         annotation_text_list.append(annotation_text)
 
-        # MODIFICATION 1: Make step args lightweight.
-        # Only update title and annotation text directly. Data (x, y, hovertext)
-        # will be updated by the JavaScript `plotly_sliderchange` event.
+        # Prevent built-in slider updates - let JavaScript handle everything
         step = dict(
-            method='relayout', # Use 'relayout' as we are only changing layout properties here
-            args=[{
-                'title.text': update_title(filtered_data_for_step),
-                'annotations[0].text': annotation_text # Update text of the first annotation
-            }],
+            method='skip',  # This prevents Plotly from doing its own updates
+            args=[],        # No arguments needed since we're skipping built-in behavior
             label=str(rating_count_threshold)
         )
         steps.append(step)
@@ -211,7 +206,6 @@ search_and_update_js_logic = f"""
             let datasets_for_slider_steps_str_el = document.getElementById('filteredDataListJson');
             let datasets_for_slider_steps = [];
             let original_annotation_texts = {json.dumps(annotation_text_list)};
-            // let original_slider_values = {json.dumps(js_original_slider_values)}; // Not directly used in this JS logic, but good for debugging
 
             if (datasets_for_slider_steps_str_el && datasets_for_slider_steps_str_el.textContent) {{
                 try {{
@@ -225,16 +219,15 @@ search_and_update_js_logic = f"""
                 datasets_for_slider_steps = null;
             }}
 
-            if (datasets_for_slider_steps && datasets_for_slider_steps.length > 0) {{ // Check if data is available
+            if (datasets_for_slider_steps && datasets_for_slider_steps.length > 0) {{
                 {js_title_update_logic}
+                
                 function updatePlotWithFilters() {{
                     if (!graphDiv.layout || !graphDiv.layout.sliders || graphDiv.layout.sliders.length === 0 || typeof graphDiv.layout.sliders[0].active === 'undefined') {{
-                        // console.warn('Slider or active index not found, cannot update plot based on slider.');
-                        // If no slider, maybe just filter based on search if datasets_for_slider_steps[0] exists?
-                        // For now, we assume slider is present if this function is central.
                         return;
                     }}
-                    const searchTerm = searchInput.value.toLowerCase();
+                    
+                    const searchTerm = searchInput.value.toLowerCase().trim();
                     const activeSliderIndex = graphDiv.layout.sliders[0].active;
 
                     if (activeSliderIndex < 0 || activeSliderIndex >= datasets_for_slider_steps.length) {{
@@ -245,6 +238,7 @@ search_and_update_js_logic = f"""
                     const current_slider_dataset = datasets_for_slider_steps[activeSliderIndex];
                     let games_to_display = current_slider_dataset;
 
+                    // Apply search filter if search term exists
                     if (searchTerm) {{
                         games_to_display = current_slider_dataset.filter(game =>
                             game.Title && typeof game.Title === 'string' && game.Title.toLowerCase().includes(searchTerm)
@@ -258,9 +252,12 @@ search_and_update_js_logic = f"""
                     
                     let current_annotation_text = original_annotation_texts[activeSliderIndex] || (original_annotation_texts.length > 0 ? original_annotation_texts[0] : "Info");
                     
+                    // Update the plot with filtered data
                     Plotly.restyle(graphDiv, {{
-                        x: [new_x], y: [new_y], hovertext: [new_hovertext]
-                    }}, [0]); // Update data of the first trace
+                        x: [new_x], 
+                        y: [new_y], 
+                        hovertext: [new_hovertext]
+                    }}, [0]);
                     
                     Plotly.relayout(graphDiv, {{
                         'title.text': new_plot_title_text,
@@ -268,35 +265,33 @@ search_and_update_js_logic = f"""
                     }});
                 }}
                 
-                searchInput.addEventListener('input', updatePlotWithFilters);
-                graphDiv.on('plotly_sliderchange', updatePlotWithFilters);
+                // Event listeners
+                searchInput.addEventListener('input', function() {{
+                    updatePlotWithFilters();
+                }});
+                
+                // Handle slider changes - this was the main issue
+                graphDiv.on('plotly_sliderchange', function() {{
+                    setTimeout(function() {{
+                        updatePlotWithFilters();
+                    }}, 50); // Small delay to ensure slider state is updated
+                }});
                 
                 let initialFilterCallPending = true;
                 function initialFilter() {{
                     if (initialFilterCallPending && graphDiv.layout && graphDiv.layout.sliders && graphDiv.layout.sliders.length > 0 && typeof graphDiv.layout.sliders[0].active !== 'undefined') {{
-                        updatePlotWithFilters(); // Call it once to sync with initial slider state
+                        updatePlotWithFilters();
                         initialFilterCallPending = false;
-                    }} else if (initialFilterCallPending && !(graphDiv.layout && graphDiv.layout.sliders && graphDiv.layout.sliders.length > 0)) {{
-                        // No slider, but maybe datasets_for_slider_steps has data for a non-slider view
-                        // This part might need adjustment if the plot can exist without a slider but still use datasets_for_slider_steps[0]
-                        // For now, assume slider is primary driver if datasets_for_slider_steps is populated
-                        // updatePlotWithFilters(); // Or a modified version for no-slider case
-                        // initialFilterCallPending = false;
-                        // console.log("No slider found, initial filter might not apply as expected.")
-                    }}
-                     else if (initialFilterCallPending) {{
-                        setTimeout(initialFilter, 100); // Wait for layout to be ready
+                    }} else if (initialFilterCallPending) {{
+                        setTimeout(initialFilter, 100);
                     }}
                 }}
 
-                if (graphDiv._fullLayout) {{ // If layout is already there
+                if (graphDiv._fullLayout) {{
                     initialFilter();
                 }} else {{
-                     graphDiv.on('plotly_afterplot', initialFilter); // Wait for plot to render
+                     graphDiv.on('plotly_afterplot', initialFilter);
                 }}
-            }} else {{
-                 // console.warn("datasets_for_slider_steps is null or empty. Search and slider updates will not function.");
-                 // Add basic search for non-slider case if needed, operating on graphDiv.data[0]
             }}
         }}
         // --- Search Bar Functionality END ---
