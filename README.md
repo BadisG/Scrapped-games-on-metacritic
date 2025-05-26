@@ -14,6 +14,7 @@ pip install -r requirements.txt
 
 # 3. clean_csv.py
 This file simplifies and filters **dataset_metacritic_scraper.csv** to make a file named **games.csv**. 
+
 To use it, both the csv and the python script must be on the same folder:
 ```
 python clean_csv.py
