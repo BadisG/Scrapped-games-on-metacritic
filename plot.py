@@ -165,7 +165,7 @@ scatter.update_layout(
 )
 
 # --- HTML Generation and JavaScript Injection ---
-file_path = 'interactive_plot.html'
+file_path = 'interactive_plot_metacritic.html'
 plot_div_id = 'gameScatterPlot'
 scatter.write_html(file_path, div_id=plot_div_id, full_html=True, include_plotlyjs='cdn')
 
