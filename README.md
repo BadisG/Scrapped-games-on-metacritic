@@ -7,7 +7,7 @@ This raw file contains all the information on all Metacritic games. You can down
 https://www.kaggle.com/datasets/zaireali/metacritic-games-scrape/data
 
 # 2. requirements.txt
-You need to install some special packages to be able to run the python scrips, here's the command:
+You need to install some special packages to be able to run the python scripts, here's the command:
 ```
 pip install -r requirements.txt
 ```
