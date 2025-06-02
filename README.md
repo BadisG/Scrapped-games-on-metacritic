@@ -1,5 +1,5 @@
 # Scrapped-games-on-metacritic
-Retrieves interesting information about games from [metacritic](https://www.metacritic.com/browse/game/all/all/all-time/userscore/?releaseYearMin=1958&releaseYearMax=2025&page=1)
+Retrieves interesting information about games from [metacritic](https://www.metacritic.com/browse/game/all/all/all-time/new/?releaseYearMin=1958&releaseYearMax=2025&page=1)
 
 # 1. games.csv
 This file contains all the games's relevant informations (Title + Initial Release + User Rating + Number of Ratings)
