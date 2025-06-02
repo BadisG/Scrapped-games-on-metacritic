@@ -19,8 +19,11 @@ data = data.dropna(subset=['Initial Release Date'])
 # Sort the data by Initial Release Date
 data = data.sort_values('Initial Release Date')
 
+# Add an index column to track original positions
+data = data.reset_index(drop=True)
+data['_index'] = data.index
+
 # Determine the min and max values for x and y axes from the overall data
-# This ensures consistent axis ranges regardless of initially plotted subset
 min_date_overall = data['Initial Release Date'].min()
 max_date_overall = data['Initial Release Date'].max()
 min_rating_overall = data['User Rating'].min()
@@ -37,14 +40,13 @@ x_margin_timedelta = pd.Timedelta(seconds=x_margin_seconds)
 x_range_overall = [min_date_overall - x_margin_timedelta, max_date_overall + x_margin_timedelta]
 y_range_overall = [min_rating_overall - y_margin_value, max_rating_overall + y_margin_value]
 
-
 # --- Step and Data Preparation ---
-python_filtered_data_list_for_js = []
+indices_for_each_step = []  # Store only indices instead of full datasets
 annotation_text_list = []
 common_text = "Ratings<br>Count<br>"
 unique_ratings = sorted(data['Number of Ratings'].astype(int).unique())
 steps = []
-num = 20 # Number of initial steps to take directly from unique_ratings
+num = 20  # Number of initial steps to take directly from unique_ratings
 
 def update_title(filtered_data_df):
     game_count = len(filtered_data_df)
@@ -54,72 +56,54 @@ def update_title(filtered_data_df):
 for i, rating_count_threshold in enumerate(unique_ratings):
     # Determine if this rating_count_threshold should be a slider step
     is_selected_step = False
-    if i < num: # Select the first 'num' unique rating counts
+    if i < num:  # Select the first 'num' unique rating counts
         is_selected_step = True
-    elif i == len(unique_ratings) - 1: # Always select the last unique rating count
+    elif i == len(unique_ratings) - 1:  # Always select the last unique rating count
         is_selected_step = True
-    elif i >= num: # For ratings after the first 'num'
-        # This logic aims to select a subset of remaining ratings to keep slider manageable
-        # It calculates an interval based on how many initial ratings were taken vs. remaining
-        # Guard against division by zero or ineffective interval
-        num_initial_ratings_for_calc = len(unique_ratings[:num]) # Actually used initial ratings count
-        
-        # Divisor for the outer floor division, derived from the number of initial ratings
-        # e.g., if num_initial_ratings_for_calc is 20, 20/1.5 = 13.33
+    elif i >= num:  # For ratings after the first 'num'
+        num_initial_ratings_for_calc = len(unique_ratings[:num])
         divisor_for_outer_floor_division_float = num_initial_ratings_for_calc / 1.5
         
         if divisor_for_outer_floor_division_float >= 1 and len(unique_ratings[num:]) > 0:
-            # Interval for selecting steps from the ratings_after_num part
-            # e.g. len(unique_ratings[num:]) = 980, int(13.33) = 13.  980 // 13 = 75.
             calculated_interval = len(unique_ratings[num:]) // int(divisor_for_outer_floor_division_float)
-            modulo_divisor = max(1, calculated_interval) # Ensure divisor for % is at least 1
+            modulo_divisor = max(1, calculated_interval)
             
-            # We need to check the index `i` relative to the start of the `unique_ratings[num:]` segment.
-            # The condition `i % modulo_divisor == 0` is applied to the global index `i`.
-            # This might not distribute as intended. A simpler way is np.linspace or fixed number of steps.
-            # Given the existing code, let's keep it, assuming it works for the user's data distribution.
             if i % modulo_divisor == 0:
-                 is_selected_step = True
-        # If the above conditions for interval calculation aren't met, this rating_count_threshold is not selected by this rule.
-        # It might have been selected by i < num or i == len(unique_ratings) - 1.
+                is_selected_step = True
 
     if is_selected_step:
-        filtered_data_for_step = data.loc[data['Number of Ratings'] >= rating_count_threshold]
-        annotation_text = f'<span style="display: block; text-align: center;">{common_text}<b>({rating_count_threshold})</b></span>'
+        # Store only the indices of games that meet the threshold
+        indices = data[data['Number of Ratings'] >= rating_count_threshold]['_index'].tolist()
+        indices_for_each_step.append(indices)
         
-        python_filtered_data_list_for_js.append(filtered_data_for_step)
+        annotation_text = f'<span style="display: block; text-align: center;">{common_text}<b>({rating_count_threshold})</b></span>'
         annotation_text_list.append(annotation_text)
 
-        # Prevent built-in slider updates - let JavaScript handle everything
         step = dict(
-            method='skip',  # This prevents Plotly from doing its own updates
-            args=[],        # No arguments needed since we're skipping built-in behavior
+            method='skip',
+            args=[],
             label=str(rating_count_threshold)
         )
         steps.append(step)
 
-# --- Serialize data for JavaScript ---
-serializable_filtered_data_list_for_js = []
-for df_item in python_filtered_data_list_for_js:
-    df_copy = df_item[['Title', 'Initial Release Date', 'User Rating']].copy()
-    df_copy['Initial Release Date'] = df_copy['Initial Release Date'].dt.strftime('%Y-%m-%d %H:%M:%S')
-    serializable_filtered_data_list_for_js.append(df_copy.to_json(orient='records'))
+# --- Prepare minimal dataset for JavaScript ---
+# Only include necessary columns and convert dates to strings
+minimal_data = data[['Title', 'Initial Release Date', 'User Rating', '_index']].copy()
+minimal_data['Initial Release Date'] = minimal_data['Initial Release Date'].dt.strftime('%Y-%m-%d %H:%M:%S')
+minimal_data_json = minimal_data.to_json(orient='records')
 
 # --- Determine initial data for the plot ---
-# MODIFICATION 2: Use data for the first slider step for the initial plot view.
-if python_filtered_data_list_for_js:
-    initial_plot_data = python_filtered_data_list_for_js[0]
-    initial_title_data_source = python_filtered_data_list_for_js[0]
+if indices_for_each_step:
+    initial_indices = indices_for_each_step[0]
+    initial_plot_data = data.iloc[initial_indices]
     initial_annotation_text = annotation_text_list[0]
 else:
-    # Fallback if no steps were generated (e.g., unique_ratings was empty)
-    initial_plot_data = data # Use the full (NaN-filtered, sorted) data
-    initial_title_data_source = data
+    initial_plot_data = data
     initial_annotation_text = f'<span style="display: block; text-align: center;">{common_text}<b>(All)</b></span>'
 
-
 # --- Create the scatter plot ---
-scatter = px.scatter(initial_plot_data, x='Initial Release Date', y='User Rating', hover_name='Title', hover_data={'Initial Release Date': False, 'User Rating': False})
+scatter = px.scatter(initial_plot_data, x='Initial Release Date', y='User Rating', hover_name='Title', 
+                    hover_data={'Initial Release Date': False, 'User Rating': False})
 
 # Update the marker properties
 scatter.update_traces(marker=dict(
@@ -145,13 +129,13 @@ if steps:
 scatter.update_layout(
     height=600,
     title={
-        'text': update_title(initial_title_data_source),
+        'text': update_title(initial_plot_data),
         'x': 0.5, 'y': 0.98, 'xanchor': 'center', 'yanchor': 'top'
     },
     xaxis_title=dict(text='Initial Release Date', font=dict(size=14)),
     yaxis_title=dict(text='Rating', font=dict(size=14)),
-    xaxis=dict(range=x_range_overall, automargin=True), # Use overall range
-    yaxis=dict(range=y_range_overall, automargin=True), # Use overall range
+    xaxis=dict(range=x_range_overall, automargin=True),
+    yaxis=dict(range=y_range_overall, automargin=True),
     font=dict(size=18),
     hoverlabel=dict(font_size=16, bgcolor='yellow'),
     margin=dict(t=50),
@@ -176,9 +160,15 @@ soup = BeautifulSoup(html_content, 'html.parser')
 search_input_html = '<input type="text" id="searchInput" placeholder="Search by title..." style="position: fixed; top: 10px; left: 10px; z-index: 1000; padding: 8px; font-size: 14px; width: 250px; border: 1px solid #ccc; border-radius: 4px;">'
 soup.body.insert(0, BeautifulSoup(search_input_html, 'html.parser'))
 
-data_list_script_tag = soup.new_tag('script', id='filteredDataListJson', type='application/json')
-data_list_script_tag.string = json.dumps(serializable_filtered_data_list_for_js)
-soup.head.append(data_list_script_tag)
+# Embed the full dataset once
+full_data_script_tag = soup.new_tag('script', id='fullDatasetJson', type='application/json')
+full_data_script_tag.string = minimal_data_json
+soup.head.append(full_data_script_tag)
+
+# Embed the indices for each step (much smaller than full datasets)
+indices_script_tag = soup.new_tag('script', id='indicesForStepsJson', type='application/json')
+indices_script_tag.string = json.dumps(indices_for_each_step)
+soup.head.append(indices_script_tag)
 
 js_title_update_logic = """
                 function js_update_plot_title(game_count) {
@@ -186,12 +176,6 @@ js_title_update_logic = """
                     return 'Game Ratings by Release Date (' + game_count + ' ' + game_text + ')';
                 }
 """
-
-# Prepare original_slider_values for JS (ensure it matches the `label` of the steps)
-js_original_slider_values = []
-if steps: # Only if steps were actually created
-    js_original_slider_values = [step['label'] for step in steps]
-
 
 search_and_update_js_logic = f"""
         // --- Search Bar Functionality START ---
@@ -203,23 +187,31 @@ search_and_update_js_logic = f"""
         }} else if (!searchInput) {{
             console.error('Search input element not found.');
         }} else {{
-            let datasets_for_slider_steps_str_el = document.getElementById('filteredDataListJson');
-            let datasets_for_slider_steps = [];
+            let fullDatasetEl = document.getElementById('fullDatasetJson');
+            let indicesForStepsEl = document.getElementById('indicesForStepsJson');
+            let fullDataset = [];
+            let indicesForSteps = [];
             let original_annotation_texts = {json.dumps(annotation_text_list)};
 
-            if (datasets_for_slider_steps_str_el && datasets_for_slider_steps_str_el.textContent) {{
+            // Parse the full dataset
+            if (fullDatasetEl && fullDatasetEl.textContent) {{
                 try {{
-                    datasets_for_slider_steps = JSON.parse(datasets_for_slider_steps_str_el.textContent).map(s => JSON.parse(s));
+                    fullDataset = JSON.parse(fullDatasetEl.textContent);
                 }} catch (e) {{
-                    console.error('Error parsing filteredDataListJson:', e);
-                    datasets_for_slider_steps = null; 
+                    console.error('Error parsing fullDatasetJson:', e);
                 }}
-            }} else {{
-                console.warn('filteredDataListJson script tag not found or empty. Search/slider might not work if datasets are expected.');
-                datasets_for_slider_steps = null;
             }}
 
-            if (datasets_for_slider_steps && datasets_for_slider_steps.length > 0) {{
+            // Parse the indices for each step
+            if (indicesForStepsEl && indicesForStepsEl.textContent) {{
+                try {{
+                    indicesForSteps = JSON.parse(indicesForStepsEl.textContent);
+                }} catch (e) {{
+                    console.error('Error parsing indicesForStepsJson:', e);
+                }}
+            }}
+
+            if (fullDataset.length > 0 && indicesForSteps.length > 0) {{
                 {js_title_update_logic}
                 
                 function updatePlotWithFilters() {{
@@ -230,17 +222,20 @@ search_and_update_js_logic = f"""
                     const searchTerm = searchInput.value.toLowerCase().trim();
                     const activeSliderIndex = graphDiv.layout.sliders[0].active;
 
-                    if (activeSliderIndex < 0 || activeSliderIndex >= datasets_for_slider_steps.length) {{
-                        console.error('Active slider index (' + activeSliderIndex + ') is out of bounds for datasets_for_slider_steps (len: ' + datasets_for_slider_steps.length + ').');
+                    if (activeSliderIndex < 0 || activeSliderIndex >= indicesForSteps.length) {{
+                        console.error('Active slider index is out of bounds.');
                         return;
                     }}
 
-                    const current_slider_dataset = datasets_for_slider_steps[activeSliderIndex];
-                    let games_to_display = current_slider_dataset;
+                    // Get the indices for the current slider position
+                    const currentIndices = indicesForSteps[activeSliderIndex];
+                    
+                    // Filter the full dataset using the indices
+                    let games_to_display = fullDataset.filter(game => currentIndices.includes(game._index));
 
                     // Apply search filter if search term exists
                     if (searchTerm) {{
-                        games_to_display = current_slider_dataset.filter(game =>
+                        games_to_display = games_to_display.filter(game =>
                             game.Title && typeof game.Title === 'string' && game.Title.toLowerCase().includes(searchTerm)
                         );
                     }}
@@ -270,11 +265,11 @@ search_and_update_js_logic = f"""
                     updatePlotWithFilters();
                 }});
                 
-                // Handle slider changes - this was the main issue
+                // Handle slider changes
                 graphDiv.on('plotly_sliderchange', function() {{
                     setTimeout(function() {{
                         updatePlotWithFilters();
-                    }}, 50); // Small delay to ensure slider state is updated
+                    }}, 50);
                 }});
                 
                 let initialFilterCallPending = true;
@@ -310,17 +305,10 @@ new_script_tag.string = f"""
                 }}
             }});
             observer.observe(sliderGroup, {{ attributes: true }});
-        }} else {{
-            // console.warn("Slider group '.slider-group' not found for transform adjustments.");
         }}
         
-        // These prevent scrolling on the page, which might be desired for a full-screen plot
-        // document.addEventListener('touchmove', function(event) {{ event.preventDefault(); }}, {{ passive: false }});
-        // document.addEventListener('wheel', function(event) {{ event.preventDefault(); }}, {{ passive: false }});
-        // document.body.style.overflow = 'hidden';
-        
         var style = document.createElement('style');
-        style.innerHTML = `.slider-group:hover {{ cursor: ns-resize; }}`; // ns-resize for vertical slider illusion
+        style.innerHTML = `.slider-group:hover {{ cursor: ns-resize; }}`;
         document.head.appendChild(style);
 
         {search_and_update_js_logic}
