@@ -4,7 +4,7 @@ Retrieves interesting information about games from [metacritic](https://www.meta
 # 1. games.csv
 This file contains all the games's relevant informations (Title + Initial Release + User Rating + Number of Ratings)
 
-It contains all the games on this site until 6/01/2025. Here's what it looks like:
+It contains all the games on this site until 6/1/2025. Here's what it looks like:
 
 <img src="https://github.com/user-attachments/assets/b78a02bb-fd1c-4caf-98a7-517ae523a34e" width="500" />
 
